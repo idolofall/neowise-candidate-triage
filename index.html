@@ -8,7 +8,9 @@
     body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; }
     textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { padding: .4rem .8rem; font: inherit; }
-    pre { white-space: pre-wrap; }
+    #topic, #draft { margin: .5rem 0; }
+    #draft { white-space: pre-wrap; }
+    #notice { min-height: 1.5em; }
   </style>
 </head>
 <body>
@@ -18,18 +20,55 @@
     <textarea id="message" rows="4"></textarea>
     <button type="submit">Разобрать заявку</button>
   </form>
-  <pre id="result" aria-live="polite"></pre>
+  <p id="notice" aria-live="polite"></p>
+  <p id="topic"></p>
+  <pre id="draft"></pre>
   <script type="module">
     const form = document.querySelector("form");
-    const result = document.querySelector("#result");
+    const notice = document.querySelector("#notice");
+    const topicNode = document.querySelector("#topic");
+    const draftNode = document.querySelector("#draft");
+    const topicNames = { delivery: "Доставка", pricing: "Стоимость", other: "Другое" };
+    let requestSeq = 0;
+
+    function clearResult() {
+      notice.textContent = "";
+      topicNode.textContent = "";
+      draftNode.textContent = "";
+    }
+
+    function showManual() {
+      clearResult();
+      notice.textContent = "Автоматический разбор не получился. Разберите заявку вручную.";
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const reply = await fetch("/api/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: document.querySelector("#message").value }),
-      });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      const seq = ++requestSeq;
+      clearResult();
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: document.querySelector("#message").value }),
+        });
+        const data = await reply.json();
+        if (seq !== requestSeq) return;
+        if (data.status === "ready" && typeof data.draft === "string" && data.draft.trim() !== "") {
+          topicNode.textContent = "Тема: " + (topicNames[data.topic] || data.topic);
+          draftNode.textContent = data.draft;
+          return;
+        }
+        if (data.status === "invalid_input") {
+          clearResult();
+          notice.textContent = "Введите текст заявки.";
+          return;
+        }
+        showManual();
+      } catch {
+        if (seq !== requestSeq) return;
+        showManual();
+      }
     });
   </script>
 </body>
